@@ -1,0 +1,193 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kingdom Wars</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #111827;
+  color: white;
+  text-align: center;
+}
+.container { max-width: 700px; margin: auto; padding: 24px 15px; }
+h1 { color: #f4bd67; font-size: 38px; }
+.panel {
+  background: #1f2937;
+  border: 1px solid #475569;
+  border-radius: 14px;
+  padding: 20px;
+  margin: 18px 0;
+}
+input, button {
+  padding: 12px;
+  margin: 6px;
+  border-radius: 8px;
+  border: 0;
+  font-size: 16px;
+}
+input { width: min(90%, 280px); }
+button {
+  background: #e9ad50;
+  color: #172033;
+  font-weight: bold;
+  cursor: pointer;
+}
+button:disabled { opacity: .45; cursor: not-allowed; }
+.hidden { display: none; }
+.resources {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.resource { background: #374151; padding: 12px; border-radius: 9px; }
+#log { text-align: left; line-height: 1.7; }
+.muted { color: #cbd5e1; }
+</style>
+</head>
+<body>
+<main class="container">
+  <h1>🏰 KINGDOM WARS</h1>
+  <p class="muted">Build your kingdom. Rule the realm. Win the crown!</p>
+
+  <section id="lobby" class="panel">
+    <h2>Enter the Kingdom</h2>
+    <input id="playerName" placeholder="Your ruler name" maxlength="18">
+    <br>
+    <button id="create">Create Kingdom</button>
+    <hr>
+    <input id="roomCode" placeholder="Enter room code">
+    <button id="join">Join Kingdom</button>
+    <p id="notice" class="muted">Create a room or join a friend's room.</p>
+  </section>
+
+  <section id="game" class="hidden">
+    <div class="panel">
+      <h2 id="kingdomTitle">Your Kingdom</h2>
+      <p>Room code: <strong id="code"></strong></p>
+      <h3 id="phase">Lobby</h3>
+      <p>Round: <span id="round">1</span></p>
+      <div class="resources" id="resources"></div>
+      <p id="castle"></p>
+      <p id="army"></p>
+      <button id="start">Start Match (Host)</button>
+    </div>
+
+    <div class="panel">
+      <h2>Choose Your Order</h2>
+      <button data-order="farm">🌾 Farm</button>
+      <button data-order="mine">⛏️ Mine</button>
+      <button data-order="lumber">🪵 Gather Wood</button>
+      <button data-order="trade">💰 Trade</button>
+      <button data-order="build">🏰 Build</button>
+      <button data-order="train">⚔️ Train Army</button>
+      <button data-order="festival">👑 Festival</button>
+      <p id="action">Waiting for the match...</p>
+    </div>
+
+    <div class="panel">
+      <h2>Kingdom Rankings</h2>
+      <div id="players"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Kingdom News</h2>
+      <div id="log"></div>
+    </div>
+  </section>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let myId = null;
+
+const $ = id => document.getElementById(id);
+const name = () => $('playerName').value.trim() || 'Ruler';
+
+function message(text) {
+  $('notice').textContent = text;
+  $('action').textContent = text;
+}
+
+socket.on('connect', () => { myId = socket.id; });
+socket.on('notice', message);
+
+$('create').onclick = () => {
+  socket.emit('createRoom', { name: name() });
+};
+
+$('join').onclick = () => {
+  socket.emit('joinRoom', {
+    name: name(),
+    code: $('roomCode').value.trim()
+  });
+};
+
+$('start').onclick = () => socket.emit('startGame');
+
+document.querySelectorAll('[data-order]').forEach(button => {
+  button.onclick = () => {
+    socket.emit('order', { type: button.dataset.order });
+  };
+});
+
+socket.on('state', room => {
+  $('lobby').classList.add('hidden');
+  $('game').classList.remove('hidden');
+
+  const me = room.players.find(p => p.id === myId);
+  if (!me) return;
+
+  $('kingdomTitle').textContent = me.kingdom;
+  $('code').textContent = room.code;
+  $('phase').textContent = room.phase.toUpperCase();
+  $('round').textContent = room.round;
+
+  $('resources').innerHTML = '';
+  for (const [key, value] of Object.entries(me.resources)) {
+    const div = document.createElement('div');
+    div.className = 'resource';
+    div.textContent = key.toUpperCase() + ': ' + value;
+    $('resources').appendChild(div);
+  }
+
+  $('castle').textContent = '🏰 Castle level: ' + me.castle;
+  $('army').textContent = '⚔️ Army: ' + me.army + ' | Crowns: ' + me.crowns;
+  $('action').textContent = me.lastAction;
+
+  $('start').classList.toggle('hidden', room.hostId !== myId);
+  $('start').disabled = room.phase !== 'lobby';
+
+  document.querySelectorAll('[data-order]').forEach(button => {
+    button.disabled = room.phase !== 'playing' || me.ready;
+  });
+
+  $('players').innerHTML = '';
+  room.players.slice().sort((a,b) => b.crowns-a.crowns)
+    .forEach((player, index) => {
+      const row = document.createElement('p');
+      row.textContent = `${index+1}. ${player.name} — ${player.crowns} crowns ${player.connected ? '🟢' : '⚪'}`;
+      $('players').appendChild(row);
+    });
+
+  $('log').innerHTML = '';
+  room.log.forEach(entry => {
+    const row = document.createElement('p');
+    row.textContent = entry;
+    $('log').appendChild(row);
+  });
+
+  if (room.phase === 'gameover') {
+    const winner = room.players.find(p => p.id === room.winnerId);
+    $('action').textContent = winner ? '🏆 Winner: ' + winner.name : 'Match complete!';
+  }
+});
+</script>
+</body>
+</html>
