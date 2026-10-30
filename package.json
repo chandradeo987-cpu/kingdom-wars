@@ -1,9 +1,8 @@
 {
-  "name": "kingdom-wars-multiplayer",
-  "version": "1.0.0",
-  "private": true,
-  "description": "A turn-based multiplayer kingdom strategy game built around Lobby, Playing, Resolving and Game Over phases.",
-  "main": "server.js",
-  "scripts": {"start": "node server.js"},
-  "dependencies": {"express": "^4.21.2", "socket.io": "^4.8.1"}
+  "name":"kingdom-wars-multiplayer",
+  "version":"2.0.0",
+  "private":true,
+  "main":"server.js",
+  "scripts":{"start":"node server.js"},
+  "dependencies":{"express":"^4.21.2","socket.io":"^4.8.1"}
 }
